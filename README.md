@@ -1,11 +1,11 @@
 # Aha API
 
-Spring Boot application that processes Excel files containing music data and stores it in a PostgreSQL database.
+Spring Boot application that processes music data and stores it in a PostgreSQL database.
 
 ## Prerequisites
 
 - Java 17
-- PostgreSQL 
+- PostgreSQL
 - Gradle
 
 ## Tech Stack
@@ -14,6 +14,7 @@ Spring Boot application that processes Excel files containing music data and sto
 - Spring Data JPA
 - PostgreSQL
 - Lombok
+- Spring DevTools
 - JUnit 5
 
 ## Getting Started
@@ -21,51 +22,65 @@ Spring Boot application that processes Excel files containing music data and sto
 ### Database Setup
 
 1. Make sure PostgreSQL is running on your machine
-2. Default configuration:
-   - Database: postgres
-   - Username: postgres
-   - Password: root
-   - Port: 5432
-
-You can modify these settings in `src/main/resources/application.properties`
+2. Default configuration (from application.properties):
+   ```properties
+   spring.datasource.url=jdbc:postgresql://localhost:5432/postgres
+   spring.datasource.username=postgres
+   spring.datasource.password=root
+   spring.datasource.driver-class-name=org.postgresql.Driver
+   ```
 
 ### Building the Project
 
 ```bash
-./gradlew :aha-api:build
+./gradlew build
 ```
 
 ### Running the Application
 
 ```bash
-./gradlew :aha-api:bootRun
+./gradlew bootRun
 ```
 
 The application will start on `http://localhost:8080`
 
-## API Endpoints
-
-### Import Music Data
-```http
-POST /api/music/import?filename={excel_filename}
-```
-- Reads an Excel file from the current directory
-- Processes music data (ACR_ID, Title, Artists, Time, Source_URL, Detail_URL)
-- Stores the data in PostgreSQL
-
-## Configuration
+## Project Configuration
 
 ### Application Properties
 
 ```properties
+# Application Name
+spring.application.name=music
+
 # Database Configuration
 spring.datasource.url=jdbc:postgresql://localhost:5432/postgres
 spring.datasource.username=postgres
 spring.datasource.password=root
+spring.datasource.driver-class-name=org.postgresql.Driver
 
 # JPA Configuration
 spring.jpa.hibernate.ddl-auto=update
 spring.jpa.show-sql=true
+spring.jpa.properties.hibernate.format_sql=true
+spring.jpa.properties.hibernate.dialect=org.hibernate.dialect.PostgreSQLDialect
+
+# Server Configuration
+server.port=8080
+```
+
+### Gradle Dependencies
+
+```groovy
+dependencies {
+    implementation 'org.springframework.boot:spring-boot-starter-web'
+    implementation 'org.springframework.boot:spring-boot-starter-data-jpa'
+    compileOnly 'org.projectlombok:lombok'
+    developmentOnly 'org.springframework.boot:spring-boot-devtools'
+    runtimeOnly 'org.postgresql:postgresql'
+    annotationProcessor 'org.projectlombok:lombok'
+    testImplementation 'org.springframework.boot:spring-boot-starter-test'
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+}
 ```
 
 ## Development
@@ -77,8 +92,8 @@ aha-api/
 │   ├── main/
 │   │   ├── java/
 │   │   │   └── com/
-│   │   │       └── aha/
-│   │   │           └── api/
+│   │   │       └── music/
+│   │   │           └── aha/
 │   │   │               ├── controller/
 │   │   │               ├── model/
 │   │   │               ├── repository/
@@ -88,6 +103,26 @@ aha-api/
 │   └── test/
 ├── build.gradle
 └── README.md
+```
+
+### Java Configuration
+
+```groovy
+sourceCompatibility = '17'
+
+java {
+    toolchain {
+        languageVersion = JavaLanguageVersion.of(17)
+    }
+}
+```
+
+## Testing
+
+The project uses JUnit 5 for testing. Run tests using:
+
+```bash
+./gradlew test
 ```
 
 ## Contributing
