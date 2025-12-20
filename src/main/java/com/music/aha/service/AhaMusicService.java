@@ -3,6 +3,8 @@ package com.music.aha.service;
 import com.music.aha.model.AhaMusic;
 import com.music.aha.repository.AhaMusicRepository;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.dao.DataIntegrityViolationException;
@@ -147,6 +149,10 @@ public class AhaMusicService {
 
     public List<AhaMusic> getAllUniqueRecords() {
         return repository.findAll();
+    }
+
+    public Page<AhaMusic> getAllUniqueRecords(Pageable pageable) {
+        return repository.findAllUniqueByTitleAndArtists(pageable);
     }
 
     public static class CleanupResult {

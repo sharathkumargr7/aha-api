@@ -4,6 +4,9 @@ import com.music.aha.model.AhaMusic;
 import com.music.aha.service.AhaMusicService;
 import com.music.aha.service.AhaMusicService.CleanupResult;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import java.nio.file.Paths;
@@ -20,6 +23,14 @@ public class AhaMusicController {
     @GetMapping("/all")
     public ResponseEntity<List<AhaMusic>> getAllMusic() {
         return ResponseEntity.ok(musicService.getAllUniqueRecords());
+    }
+
+    @GetMapping("/page")
+    public ResponseEntity<Page<AhaMusic>> getMusicPage(
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "20") int size) {
+        Pageable pageable = PageRequest.of(page, size);
+        return ResponseEntity.ok(musicService.getAllUniqueRecords(pageable));
     }
 
     @GetMapping("/import")
