@@ -13,12 +13,40 @@ import java.io.IOException;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.*;
+import java.io.File;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 @Service
 public class AhaMusicService {
 
     @Autowired
     private AhaMusicRepository repository;
+
+    // Utility to find the latest matching CSV file in E:\\Downloads
+    public static File getLatestAhaMusicCsv() {
+        File downloadsDir = new File("E:\\Downloads");
+        File[] csvFiles = downloadsDir.listFiles((dir, name) -> name.startsWith("aha-music-export") && name.endsWith(".csv"));
+
+        if (csvFiles == null || csvFiles.length == 0) {
+            return null;
+        }
+        Pattern datePattern = Pattern.compile("aha-music-export_(\\d{4}-\\d{2}-\\d{2})\\.csv");
+        File latestFile = null;
+        String maxDate = "";
+
+        for (File file : csvFiles) {
+            Matcher matcher = datePattern.matcher(file.getName());
+            if (matcher.matches()) {
+                String datePart = matcher.group(1); // yyyy-mm-dd
+                if (datePart.compareTo(maxDate) > 0) {
+                    maxDate = datePart;
+                    latestFile = file;
+                }
+            }
+        }
+        return latestFile;
+    }
 
     @Transactional
     public void importCsvFile(String filePath) throws IOException {
@@ -56,10 +84,33 @@ public class AhaMusicService {
             }
         }
 
-        try {
-            repository.saveAll(uniqueRecords.values());
-        } catch (DataIntegrityViolationException e) {
-            throw new RuntimeException("Error saving records: Duplicate entries found in database", e);
+        // Check existing records in database and merge with CSV records
+        List<AhaMusic> recordsToSave = new ArrayList<>();
+        for (AhaMusic csvRecord : uniqueRecords.values()) {
+            Optional<AhaMusic> existingRecord = repository.findByTitleAndArtists(
+                csvRecord.getTitle(), csvRecord.getArtists());
+            
+            if (existingRecord.isPresent()) {
+                // Record exists - update if CSV record is more recent
+                AhaMusic existing = existingRecord.get();
+                if (csvRecord.getTime().isAfter(existing.getTime())) {
+                    // Update existing record with new data
+                    existing.setAcrId(csvRecord.getAcrId());
+                    existing.setTime(csvRecord.getTime());
+                    existing.setSourceUrl(csvRecord.getSourceUrl());
+                    existing.setDetailUrl(csvRecord.getDetailUrl());
+                    recordsToSave.add(existing);
+                }
+                // If existing record is more recent, skip it
+            } else {
+                // New record - add it
+                recordsToSave.add(csvRecord);
+            }
+        }
+
+        // Save only new or updated records
+        if (!recordsToSave.isEmpty()) {
+            repository.saveAll(recordsToSave);
         }
     }
 

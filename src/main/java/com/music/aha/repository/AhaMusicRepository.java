@@ -5,6 +5,7 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.stereotype.Repository;
 import java.util.List;
+import java.util.Optional;
 
 @Repository
 public interface AhaMusicRepository extends JpaRepository<AhaMusic, String> {
@@ -15,4 +16,6 @@ public interface AhaMusicRepository extends JpaRepository<AhaMusic, String> {
     
     @Query("SELECT COUNT(DISTINCT CONCAT(a.title, ':', a.artists)) FROM AhaMusic a")
     long countUniqueTitleArtistPairs();
+    
+    Optional<AhaMusic> findByTitleAndArtists(String title, String artists);
 } 

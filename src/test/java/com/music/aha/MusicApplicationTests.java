@@ -1,4 +1,4 @@
-package com.example.aha.music;
+package com.music.aha;
 
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.SpringBootTest;

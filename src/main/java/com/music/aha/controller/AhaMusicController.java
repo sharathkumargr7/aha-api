@@ -26,14 +26,19 @@ public class AhaMusicController {
     @PostMapping("/import")
     public ResponseEntity<String> importCsvFile() {
         try {
-            String filePath = Paths.get("aha.csv").toAbsolutePath().toString();
+            java.io.File latestCsv = AhaMusicService.getLatestAhaMusicCsv();
+            if (latestCsv == null) {
+                return ResponseEntity.internalServerError()
+                        .body("No suitable aha-music-export_YYYY-MM-DD.csv file found in E:\\Downloads");
+            }
+            String filePath = latestCsv.getAbsolutePath();
             long beforeCount = musicService.getUniqueRecordCount();
             musicService.importCsvFile(filePath);
             long afterCount = musicService.getUniqueRecordCount();
             long newRecords = afterCount - beforeCount;
-            
-            return ResponseEntity.ok(String.format("CSV file imported successfully. Added %d new unique records. Total records: %d", 
-                newRecords, afterCount));
+
+            return ResponseEntity.ok(String.format("CSV file '%s' imported successfully. Added %d new unique records. Total records: %d",
+                    latestCsv.getName(), newRecords, afterCount));
         } catch (Exception e) {
             return ResponseEntity.internalServerError()
                 .body("Error importing CSV file: " + e.getMessage());
@@ -41,6 +46,7 @@ public class AhaMusicController {
     }
 
     @GetMapping("/cleanup")
+    @PostMapping("/cleanup")
     public ResponseEntity<String> cleanupDuplicates() {
         try {
             CleanupResult result = musicService.cleanupDuplicates();
