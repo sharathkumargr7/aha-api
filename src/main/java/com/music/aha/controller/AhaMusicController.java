@@ -56,6 +56,11 @@ public class AhaMusicController {
         }
     }
 
+    @GetMapping("/available-for-playlist")
+    public ResponseEntity<List<AhaMusic>> getAvailableForPlaylist() {
+        return ResponseEntity.ok(musicService.findByAddedToPlaylist(false));
+    }
+
     @GetMapping("/cleanup")
     @PostMapping("/cleanup")
     public ResponseEntity<String> cleanupDuplicates() {

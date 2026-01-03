@@ -155,6 +155,22 @@ public class AhaMusicService {
         return repository.findAllUniqueByTitleAndArtists(pageable);
     }
 
+    public List<AhaMusic> findByTitleAndArtistsAndAddedToPlaylist(String title, String artists, boolean addedToPlaylist) {
+        return repository.findByTitleAndArtistsAndAddedToPlaylist(title, artists, addedToPlaylist);
+    }
+
+    public List<AhaMusic> findByAddedToPlaylist(boolean addedToPlaylist) {
+        return repository.findByAddedToPlaylist(addedToPlaylist);
+    }
+
+    public Optional<AhaMusic> findByTitleAndArtists(String title, String artists) {
+        return repository.findByTitleAndArtists(title, artists);
+    }
+
+    public AhaMusic save(AhaMusic music) {
+        return repository.save(music);
+    }
+
     public static class CleanupResult {
         private final long originalCount;
         private final long newCount;

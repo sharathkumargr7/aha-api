@@ -1,6 +1,7 @@
 package com.music.aha.controller;
 
 import com.music.aha.service.YouTubeService;
+import com.music.aha.service.AhaMusicService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.ResponseEntity;
@@ -15,6 +16,7 @@ import org.springframework.util.MultiValueMap;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.net.URLEncoder;
 
 @RestController
@@ -24,6 +26,9 @@ public class YouTubeController {
 
     @Autowired
     private YouTubeService youTubeService;
+    
+    @Autowired
+    private AhaMusicService ahaMusicService;
 
     @Value("${google.oauth.client-id}")
     private String clientId;
@@ -40,20 +45,70 @@ public class YouTubeController {
             Credential credential = new Credential(BearerToken.authorizationHeaderAccessMethod())
                 .setAccessToken(accessToken);
 
-            List<YouTubeService.SongInfo> songInfos = new ArrayList<>();
+            // Filter songs that exist in database and haven't been added to playlist yet
+            List<SongRequest> availableSongs = new ArrayList<>();
+            List<SongRequest> alreadyAddedSongs = new ArrayList<>();
+            List<SongRequest> notFoundSongs = new ArrayList<>();
+            List<com.music.aha.model.AhaMusic> recordsToUpdate = new ArrayList<>();
+            
             for (SongRequest song : songs) {
+                Optional<com.music.aha.model.AhaMusic> existingRecord = ahaMusicService.findByTitleAndArtists(
+                    song.getTitle(), song.getArtists());
+                if (existingRecord.isPresent()) {
+                    com.music.aha.model.AhaMusic record = existingRecord.get();
+                    if (!record.isAddedToPlaylist()) {
+                        availableSongs.add(song);
+                        recordsToUpdate.add(record);
+                    } else {
+                        alreadyAddedSongs.add(song);
+                    }
+                } else {
+                    notFoundSongs.add(song);
+                }
+            }
+
+            if (availableSongs.isEmpty()) {
+                StringBuilder errorMsg = new StringBuilder("No new songs available to add to playlist.");
+                if (!alreadyAddedSongs.isEmpty()) {
+                    errorMsg.append(" ").append(alreadyAddedSongs.size()).append(" songs have already been added.");
+                }
+                if (!notFoundSongs.isEmpty()) {
+                    errorMsg.append(" ").append(notFoundSongs.size()).append(" songs were not found in the database.");
+                }
+                return ResponseEntity.badRequest()
+                    .body(Map.of("error", errorMsg.toString()));
+            }
+
+            List<YouTubeService.SongInfo> songInfos = new ArrayList<>();
+            for (SongRequest song : availableSongs) {
                 songInfos.add(new YouTubeService.SongInfo(song.getTitle(), song.getArtists()));
             }
 
             List<String> videoIds = youTubeService.searchVideos(songInfos, credential);
             if (videoIds.isEmpty()) {
                 return ResponseEntity.badRequest()
-                    .body(Map.of("error", "No videos found for the provided songs"));
+                    .body(Map.of("error", "No videos found for the available songs"));
             }
-            String playlistUrl = youTubeService.createPlaylistUrl(videoIds);
+            
+            // Create the playlist under the authenticated user's account
+            String playlistUrl = youTubeService.createPlaylist(videoIds, credential);
+            if (playlistUrl == null) {
+                return ResponseEntity.internalServerError()
+                    .body(Map.of("error", "Failed to create playlist on YouTube"));
+            }
+            
+            // Mark the songs as added to playlist
+            for (com.music.aha.model.AhaMusic record : recordsToUpdate) {
+                record.setAddedToPlaylist(true);
+                ahaMusicService.save(record);
+            }
+            
             return ResponseEntity.ok(Map.of(
                 "playlistUrl", playlistUrl,
                 "videoCount", videoIds.size(),
+                "addedCount", availableSongs.size(),
+                "alreadyAddedCount", alreadyAddedSongs.size(),
+                "notFoundCount", notFoundSongs.size(),
                 "requestedCount", songs.size()
             ));
         } catch (IllegalStateException e) {

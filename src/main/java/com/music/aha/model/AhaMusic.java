@@ -23,6 +23,9 @@ public class AhaMusic {
     private LocalDateTime time;
     private String sourceUrl;
     private String detailUrl;
+    
+    @Column(name = "added_to_playlist", nullable = false)
+    private boolean addedToPlaylist = false;
 
     // Default constructor
     public AhaMusic() {}
@@ -74,5 +77,13 @@ public class AhaMusic {
 
     public void setDetailUrl(String detailUrl) {
         this.detailUrl = detailUrl;
+    }
+
+    public boolean isAddedToPlaylist() {
+        return addedToPlaylist;
+    }
+
+    public void setAddedToPlaylist(boolean addedToPlaylist) {
+        this.addedToPlaylist = addedToPlaylist;
     }
 } 

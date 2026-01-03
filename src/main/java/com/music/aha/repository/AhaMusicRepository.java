@@ -24,4 +24,8 @@ public interface AhaMusicRepository extends JpaRepository<AhaMusic, String> {
     long countUniqueTitleArtistPairs();
     
     Optional<AhaMusic> findByTitleAndArtists(String title, String artists);
+    
+    List<AhaMusic> findByTitleAndArtistsAndAddedToPlaylist(String title, String artists, boolean addedToPlaylist);
+    
+    List<AhaMusic> findByAddedToPlaylist(boolean addedToPlaylist);
 } 
