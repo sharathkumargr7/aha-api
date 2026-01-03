@@ -19,6 +19,24 @@ import java.util.concurrent.ConcurrentHashMap;
 @Service
 public class YouTubeService {
 
+    public static class SongInfo {
+        private String title;
+        private String artists;
+
+        public SongInfo(String title, String artists) {
+            this.title = title;
+            this.artists = artists;
+        }
+
+        public String getTitle() {
+            return title;
+        }
+
+        public String getArtists() {
+            return artists;
+        }
+    }
+
     private final Environment environment;
     // Simple cache for video ID lookups to avoid repeated API calls
     private final ConcurrentHashMap<String, String> videoIdCache = new ConcurrentHashMap<>();
@@ -166,77 +184,130 @@ public class YouTubeService {
 
     /**
      * Create a playlist under the authenticated user's account and add the provided videos.
+     * If a playlist named "aha-music" already exists, add videos to it instead of creating a new one.
+     * If existingPlaylistId is provided, use it directly. Otherwise, search for "aha-music" playlist.
      * Returns the playlist URL (https://www.youtube.com/playlist?list=PLAYLIST_ID) or null on error.
      */
     public String createPlaylist(List<String> videoIds, Credential credential) {
+        return createPlaylist(videoIds, credential, null);
+    }
+
+    /**
+     * Create a playlist under the authenticated user's account and add the provided videos.
+     * If existingPlaylistId is provided, use it directly. Otherwise, search for "aha-music" playlist.
+     * Returns the playlist URL (https://www.youtube.com/playlist?list=PLAYLIST_ID) or null on error.
+     */
+    public String createPlaylist(List<String> videoIds, Credential credential, String existingPlaylistId) {
         if (videoIds == null || videoIds.isEmpty()) {
             return null;
         }
         try {
             YouTube youtube = getYouTubeService(credential);
 
-            // Create playlist metadata
-            com.google.api.services.youtube.model.Playlist playlist = new com.google.api.services.youtube.model.Playlist();
-            com.google.api.services.youtube.model.PlaylistSnippet snippet = new com.google.api.services.youtube.model.PlaylistSnippet();
-            snippet.setTitle("aha-music");
-            snippet.setDescription("Playlist created by Aha Music");
-            playlist.setSnippet(snippet);
+            String playlistId = existingPlaylistId;
 
-            com.google.api.services.youtube.model.PlaylistStatus status = new com.google.api.services.youtube.model.PlaylistStatus();
-            status.setPrivacyStatus("private");
-            playlist.setStatus(status);
-
-            // Insert the playlist
-            YouTube.Playlists.Insert insertRequest = youtube.playlists().insert(Arrays.asList("snippet","status"), playlist);
-            com.google.api.services.youtube.model.Playlist inserted = insertRequest.execute();
-            String playlistId = inserted.getId();
-
-            // Add each video to the playlist
-            for (String videoId : videoIds) {
-                com.google.api.services.youtube.model.PlaylistItem playlistItem = new com.google.api.services.youtube.model.PlaylistItem();
-                com.google.api.services.youtube.model.PlaylistItemSnippet itemSnippet = new com.google.api.services.youtube.model.PlaylistItemSnippet();
-                itemSnippet.setPlaylistId(playlistId);
-
-                com.google.api.services.youtube.model.ResourceId resourceId = new com.google.api.services.youtube.model.ResourceId();
-                resourceId.setKind("youtube#video");
-                resourceId.setVideoId(videoId);
-                itemSnippet.setResourceId(resourceId);
-
-                playlistItem.setSnippet(itemSnippet);
-
-                YouTube.PlaylistItems.Insert itemInsert = youtube.playlistItems().insert(Arrays.asList("snippet"), playlistItem);
-                itemInsert.execute();
-
-                // Small delay to be kind to API quota
+            // If no existing playlist ID provided, try to find an existing playlist named "aha-music"
+            if (playlistId == null) {
                 try {
-                    Thread.sleep(100);
-                } catch (InterruptedException e) {
-                    Thread.currentThread().interrupt();
+                    YouTube.Playlists.List listRequest = youtube.playlists().list(Arrays.asList("id", "snippet"));
+                    listRequest.setMine(true);
+                    listRequest.setMaxResults(50L); // Check up to 50 playlists
+
+                    com.google.api.services.youtube.model.PlaylistListResponse playlistResponse = listRequest.execute();
+                    List<com.google.api.services.youtube.model.Playlist> playlists = playlistResponse.getItems();
+
+                    if (playlists != null) {
+                        for (com.google.api.services.youtube.model.Playlist playlist : playlists) {
+                            if ("aha-music".equals(playlist.getSnippet().getTitle())) {
+                                playlistId = playlist.getId();
+                                break;
+                            }
+                        }
+                    }
+                } catch (Exception e) {
+                    System.err.println("Error searching for existing playlist: " + e.getMessage());
+                    // Continue to create new playlist if search fails
                 }
             }
 
+            // If no existing playlist found, create a new one
+            if (playlistId == null) {
+                com.google.api.services.youtube.model.Playlist playlist = new com.google.api.services.youtube.model.Playlist();
+                com.google.api.services.youtube.model.PlaylistSnippet snippet = new com.google.api.services.youtube.model.PlaylistSnippet();
+                snippet.setTitle("aha-music");
+                snippet.setDescription("Playlist created by Aha Music");
+                playlist.setSnippet(snippet);
+
+                com.google.api.services.youtube.model.PlaylistStatus status = new com.google.api.services.youtube.model.PlaylistStatus();
+                status.setPrivacyStatus("private");
+                playlist.setStatus(status);
+
+                // Insert the playlist
+                YouTube.Playlists.Insert insertRequest = youtube.playlists().insert(Arrays.asList("snippet","status"), playlist);
+                com.google.api.services.youtube.model.Playlist inserted = insertRequest.execute();
+                playlistId = inserted.getId();
+            }
+
+            // Add each video to the playlist (skip if already exists)
+            int addedCount = 0;
+            for (String videoId : videoIds) {
+                try {
+                    // Check if video is already in playlist
+                    boolean alreadyInPlaylist = false;
+                    try {
+                        YouTube.PlaylistItems.List itemsList = youtube.playlistItems().list(Arrays.asList("id", "contentDetails"));
+                        itemsList.setPlaylistId(playlistId);
+                        itemsList.setMaxResults(50L); // Check recent items
+
+                        com.google.api.services.youtube.model.PlaylistItemListResponse itemsResponse = itemsList.execute();
+                        List<com.google.api.services.youtube.model.PlaylistItem> items = itemsResponse.getItems();
+
+                        if (items != null) {
+                            for (com.google.api.services.youtube.model.PlaylistItem item : items) {
+                                if (videoId.equals(item.getContentDetails().getVideoId())) {
+                                    alreadyInPlaylist = true;
+                                    break;
+                                }
+                            }
+                        }
+                    } catch (Exception e) {
+                        // If we can't check, assume it's not there and try to add
+                    }
+
+                    if (!alreadyInPlaylist) {
+                        com.google.api.services.youtube.model.PlaylistItem playlistItem = new com.google.api.services.youtube.model.PlaylistItem();
+                        com.google.api.services.youtube.model.PlaylistItemSnippet itemSnippet = new com.google.api.services.youtube.model.PlaylistItemSnippet();
+                        itemSnippet.setPlaylistId(playlistId);
+
+                        com.google.api.services.youtube.model.ResourceId resourceId = new com.google.api.services.youtube.model.ResourceId();
+                        resourceId.setKind("youtube#video");
+                        resourceId.setVideoId(videoId);
+                        itemSnippet.setResourceId(resourceId);
+
+                        playlistItem.setSnippet(itemSnippet);
+
+                        YouTube.PlaylistItems.Insert itemInsert = youtube.playlistItems().insert(Arrays.asList("snippet"), playlistItem);
+                        itemInsert.execute();
+                        addedCount++;
+
+                        // Small delay to be kind to API quota
+                        try {
+                            Thread.sleep(100);
+                        } catch (InterruptedException e) {
+                            Thread.currentThread().interrupt();
+                        }
+                    }
+                } catch (Exception e) {
+                    System.err.println("Error adding video " + videoId + " to playlist: " + e.getMessage());
+                    // Continue with other videos
+                }
+            }
+
+            // Return the playlist URL
             return "https://www.youtube.com/playlist?list=" + playlistId;
         } catch (Exception e) {
-            System.err.println("Error creating playlist: " + e.getMessage());
+            System.err.println("Error creating/updating playlist: " + e.getMessage());
             return null;
         }
-    }
-
-    public static class SongInfo {
-        private String title;
-        private String artists;
-
-        public SongInfo(String title, String artists) {
-            this.title = title;
-            this.artists = artists;
-        }
-
-        public String getTitle() {
-            return title;
-        }
-
-        public String getArtists() {
-            return artists;
-        }
-    }
+    } 
 }

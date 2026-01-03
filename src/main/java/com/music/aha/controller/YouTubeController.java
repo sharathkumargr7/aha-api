@@ -38,7 +38,8 @@ public class YouTubeController {
 
     @PostMapping("/create-playlist")
     public ResponseEntity<?> createPlaylist(@RequestHeader("Authorization") String authorization,
-                                            @RequestBody List<SongRequest> songs) {
+                                            @RequestBody List<SongRequest> songs,
+                                            @RequestParam(value = "playlistId", required = false) String existingPlaylistId) {
         try {
             // Extract access token from header
             String accessToken = authorization.replace("Bearer ", "");
@@ -91,10 +92,10 @@ public class YouTubeController {
             }
             
             // Create the playlist under the authenticated user's account
-            String playlistUrl = youTubeService.createPlaylist(videoIds, credential);
+            String playlistUrl = youTubeService.createPlaylist(videoIds, credential, existingPlaylistId);
             if (playlistUrl == null) {
                 return ResponseEntity.internalServerError()
-                    .body(Map.of("error", "Failed to create playlist on YouTube"));
+                    .body(Map.of("error", "Failed to create or update playlist on YouTube"));
             }
             
             // Mark the songs as added to playlist
@@ -103,8 +104,15 @@ public class YouTubeController {
                 ahaMusicService.save(record);
             }
             
+            // Extract playlist ID from URL for caching
+            String playlistId = null;
+            if (playlistUrl != null && playlistUrl.contains("list=")) {
+                playlistId = playlistUrl.substring(playlistUrl.indexOf("list=") + 5);
+            }
+            
             return ResponseEntity.ok(Map.of(
                 "playlistUrl", playlistUrl,
+                "playlistId", playlistId,
                 "videoCount", videoIds.size(),
                 "addedCount", availableSongs.size(),
                 "alreadyAddedCount", alreadyAddedSongs.size(),
