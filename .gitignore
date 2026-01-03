@@ -37,3 +37,6 @@ out/
 .vscode/
 
 *.csv
+
+# Environment variables
+src/main/resources/application-local.properties

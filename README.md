@@ -44,6 +44,21 @@ Spring Boot application that processes music data and stores it in a PostgreSQL 
 
 The application will start on `http://localhost:8080`
 
+### YouTube API Setup (Optional)
+
+If you want to use the YouTube playlist creation feature:
+
+1. Create a `.env` file in the `aha-api` directory:
+   ```
+   YOUTUBE_API_KEY=your-youtube-api-key-here
+   ```
+
+2. Get your API key from [Google Cloud Console](https://console.cloud.google.com/apis/credentials)
+
+3. See `YOUTUBE_SETUP.md` in the parent directory for detailed instructions
+
+The `.env` file is automatically loaded and is ignored by git.
+
 ## Project Configuration
 
 ### Application Properties
