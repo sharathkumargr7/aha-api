@@ -2,9 +2,15 @@ package com.music.aha.controller;
 
 import com.music.aha.service.YouTubeService;
 import com.music.aha.service.AhaMusicService;
+import com.music.aha.service.JwtUtils;
+import com.music.aha.service.RefreshTokenService;
+import com.music.aha.model.User;
+import com.music.aha.model.RefreshToken;
+import com.music.aha.repository.UserRepository;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.ResponseEntity;
+import org.springframework.http.ResponseCookie;
 import org.springframework.web.bind.annotation.*;
 import com.google.api.client.auth.oauth2.Credential;
 import com.google.api.client.auth.oauth2.BearerToken;
@@ -12,16 +18,19 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.util.LinkedMultiValueMap;
 import org.springframework.util.MultiValueMap;
+import org.springframework.security.crypto.password.PasswordEncoder;
+import jakarta.servlet.http.HttpServletResponse;
 
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.net.URLEncoder;
+import java.time.Duration;
+import java.util.UUID;
 
 @RestController
 @RequestMapping("/api/youtube")
-@CrossOrigin(origins = "*")
 public class YouTubeController {
 
     @Autowired
@@ -30,6 +39,18 @@ public class YouTubeController {
     @Autowired
     private AhaMusicService ahaMusicService;
 
+    @Autowired
+    private JwtUtils jwtUtils;
+
+    @Autowired
+    private RefreshTokenService refreshTokenService;
+
+    @Autowired
+    private UserRepository userRepository;
+
+    @Autowired
+    private PasswordEncoder passwordEncoder;
+
     @Value("${google.oauth.client-id}")
     private String clientId;
 
@@ -37,12 +58,12 @@ public class YouTubeController {
     private String clientSecret;
 
     @PostMapping("/create-playlist")
-    public ResponseEntity<?> createPlaylist(@RequestHeader("Authorization") String authorization,
+    public ResponseEntity<?> createPlaylist(@RequestHeader("X-YouTube-Token") String youtubeToken,
                                             @RequestBody List<SongRequest> songs,
                                             @RequestParam(value = "playlistId", required = false) String existingPlaylistId) {
         try {
-            // Extract access token from header
-            String accessToken = authorization.replace("Bearer ", "");
+            // Use YouTube access token from custom header
+            String accessToken = youtubeToken;
             Credential credential = new Credential(BearerToken.authorizationHeaderAccessMethod())
                 .setAccessToken(accessToken);
 
@@ -131,7 +152,7 @@ public class YouTubeController {
     @GetMapping("/login")
     public ResponseEntity<Map<String, String>> login() {
         String redirectUri = "http://localhost:8080/api/youtube/oauth2callback";
-        String scope = "https://www.googleapis.com/auth/youtube";
+        String scope = "https://www.googleapis.com/auth/youtube https://www.googleapis.com/auth/userinfo.email";
         String authUrl = "https://accounts.google.com/o/oauth2/v2/auth?client_id=" + clientId
                 + "&redirect_uri=" + redirectUri
                 + "&response_type=code"
@@ -141,12 +162,12 @@ public class YouTubeController {
     }
 
     @GetMapping("/oauth2callback")
-    public ResponseEntity<?> oauth2callback(@RequestParam("code") String code) {
+    public ResponseEntity<?> oauth2callback(@RequestParam("code") String code, HttpServletResponse httpResponse) {
         try {
             String redirectUri = "http://localhost:8080/api/youtube/oauth2callback";
             String tokenEndpoint = "https://oauth2.googleapis.com/token";
 
-            // Prepare request body
+            // Exchange code for tokens
             MultiValueMap<String, String> params = new LinkedMultiValueMap<>();
             params.add("code", code);
             params.add("client_id", clientId);
@@ -154,7 +175,6 @@ public class YouTubeController {
             params.add("redirect_uri", redirectUri);
             params.add("grant_type", "authorization_code");
 
-            // Use RestTemplate to send POST request
             org.springframework.web.client.RestTemplate restTemplate = new org.springframework.web.client.RestTemplate();
             org.springframework.http.HttpHeaders headers = new org.springframework.http.HttpHeaders();
             headers.set("Content-Type", "application/x-www-form-urlencoded");
@@ -166,18 +186,65 @@ public class YouTubeController {
                 request,
                 new org.springframework.core.ParameterizedTypeReference<Map<String, Object>>() {}
             );
-            Map<String, Object> body = response.getBody();
-            if (body != null && body.containsKey("access_token")) {
-                String accessToken = (String) body.get("access_token");
+            Map<String, Object> tokenBody = response.getBody();
+            if (tokenBody == null || !tokenBody.containsKey("access_token")) {
                 return ResponseEntity.status(HttpStatus.FOUND)
-                    .header(HttpHeaders.LOCATION, "http://localhost:4200?access_token=" + accessToken)
-                    .build();
-            } else {
-                return ResponseEntity.status(HttpStatus.FOUND)
-                    .header(HttpHeaders.LOCATION, "http://localhost:4200?error=failed_to_obtain_token")
+                    .header(HttpHeaders.LOCATION, "http://localhost:4200/oauth2callback?error=failed_to_obtain_token")
                     .build();
             }
+
+            String youtubeAccessToken = (String) tokenBody.get("access_token");
+
+            // Fetch user info from Google
+            org.springframework.http.HttpHeaders userInfoHeaders = new org.springframework.http.HttpHeaders();
+            userInfoHeaders.set("Authorization", "Bearer " + youtubeAccessToken);
+            org.springframework.http.HttpEntity<Void> userInfoRequest = new org.springframework.http.HttpEntity<>(userInfoHeaders);
+            
+            org.springframework.http.ResponseEntity<Map<String, Object>> userInfoResponse = restTemplate.exchange(
+                "https://www.googleapis.com/oauth2/v2/userinfo",
+                org.springframework.http.HttpMethod.GET,
+                userInfoRequest,
+                new org.springframework.core.ParameterizedTypeReference<Map<String, Object>>() {}
+            );
+            
+            Map<String, Object> userInfo = userInfoResponse.getBody();
+            if (userInfo == null || !userInfo.containsKey("email")) {
+                return ResponseEntity.status(HttpStatus.FOUND)
+                    .header(HttpHeaders.LOCATION, "http://localhost:4200/oauth2callback?error=failed_to_get_user_info")
+                    .build();
+            }
+
+            String email = (String) userInfo.get("email");
+            String userId = (String) userInfo.get("id");
+            String username = "google_" + userId; // Use Google ID as username
+
+            // Find or create user in database
+            User user = userRepository.findByUsername(username).orElseGet(() -> {
+                User newUser = new User();
+                newUser.setUsername(username);
+                // Set a random password (won't be used for Google OAuth users)
+                newUser.setPassword(passwordEncoder.encode(UUID.randomUUID().toString()));
+                newUser.setRoles("ROLE_USER");
+                return userRepository.save(newUser);
+            });
+
+            // Generate backend access token
+            String backendAccessToken = jwtUtils.generateAccessToken(user.getUsername());
+            
+            // Create refresh token
+            RefreshToken refreshToken = refreshTokenService.createFor(user.getUsername());
+            ResponseCookie refreshCookie = ResponseCookie.from("refreshToken", refreshToken.getToken())
+                .httpOnly(true).secure(false).path("/")
+                .maxAge(Duration.ofSeconds(Long.parseLong(System.getProperty("refresh.expirationSeconds", "1209600"))))
+                .sameSite("Lax").build();
+            httpResponse.addHeader("Set-Cookie", refreshCookie.toString());
+
+            // Redirect to frontend with both tokens
+            return ResponseEntity.status(HttpStatus.FOUND)
+                .header(HttpHeaders.LOCATION, "http://localhost:4200/oauth2callback?access_token=" + backendAccessToken + "&youtube_token=" + youtubeAccessToken)
+                .build();
         } catch (Exception e) {
+            e.printStackTrace();
             String errorMessage;
             try {
                 errorMessage = java.net.URLEncoder.encode(e.getMessage(), "UTF-8");
@@ -185,7 +252,7 @@ public class YouTubeController {
                 errorMessage = "encoding_error";
             }
             return ResponseEntity.status(HttpStatus.FOUND)
-                .header(HttpHeaders.LOCATION, "http://localhost:4200?error=" + errorMessage)
+                .header(HttpHeaders.LOCATION, "http://localhost:4200/oauth2callback?error=" + errorMessage)
                 .build();
         }
     }
