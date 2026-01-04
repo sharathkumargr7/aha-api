@@ -62,10 +62,10 @@ public class AuthController {
             UserDetails ud = userDetailsService.loadUserByUsername(username);
             String access = jwtUtils.generateAccessToken(ud.getUsername());
             RefreshToken refresh = refreshTokenService.createFor(username);
-            ResponseCookie cookie = ResponseCookie.from("refreshToken", refresh.getToken())
-                    .httpOnly(true).secure(true).path("/api/auth/refresh")
+                ResponseCookie cookie = ResponseCookie.from("refreshToken", refresh.getToken())
+                    .httpOnly(true).secure(false).path("/")
                     .maxAge(Duration.ofSeconds(Long.parseLong(System.getProperty("refresh.expirationSeconds", "1209600"))))
-                    .sameSite("None").build();
+                    .sameSite("Lax").build();
             response.addHeader("Set-Cookie", cookie.toString());
             return ResponseEntity.ok(Map.of("accessToken", access));
         } catch (AuthenticationException ex) {
@@ -82,10 +82,10 @@ public class AuthController {
                     RefreshToken newRt = refreshTokenService.rotate(rt);
                     UserDetails user = userDetailsService.loadUserByUsername(newRt.getUsername());
                     String access = jwtUtils.generateAccessToken(user.getUsername());
-                    ResponseCookie cookie = ResponseCookie.from("refreshToken", newRt.getToken())
-                            .httpOnly(true).secure(true).path("/api/auth/refresh")
+                        ResponseCookie cookie = ResponseCookie.from("refreshToken", newRt.getToken())
+                            .httpOnly(true).secure(false).path("/")
                             .maxAge(Duration.ofSeconds(Long.parseLong(System.getProperty("refresh.expirationSeconds", "1209600"))))
-                            .sameSite("None").build();
+                            .sameSite("Lax").build();
                     response.addHeader("Set-Cookie", cookie.toString());
                     return ResponseEntity.ok(Map.of("accessToken", access));
                 })
@@ -98,7 +98,7 @@ public class AuthController {
             refreshTokenService.findByToken(token).ifPresent(refreshTokenService::revoke);
         }
         ResponseCookie delete = ResponseCookie.from("refreshToken", "")
-                .httpOnly(true).secure(true).path("/api/auth/refresh").maxAge(0).sameSite("None").build();
+            .httpOnly(true).secure(false).path("/").maxAge(0).sameSite("Lax").build();
         response.addHeader("Set-Cookie", delete.toString());
         return ResponseEntity.ok().build();
     }

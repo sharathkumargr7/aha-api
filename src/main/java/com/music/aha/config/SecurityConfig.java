@@ -37,11 +37,16 @@ public class SecurityConfig {
             cfg.setAllowedHeaders(java.util.List.of("*"));
             return cfg;
         }))
-        .csrf(csrf -> csrf.csrfTokenRepository(CookieCsrfTokenRepository.withHttpOnlyFalse()))
+        .csrf(csrf -> csrf.disable())
         .sessionManagement(sm -> sm.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
         .authorizeHttpRequests(ar -> ar
-                .requestMatchers("/api/auth/**").permitAll()
-                .anyRequest().authenticated()
+                .requestMatchers("/api/auth/login").permitAll()
+                .requestMatchers("/api/auth/refresh").permitAll()
+                .requestMatchers("/api/auth/logout").permitAll()
+                .requestMatchers("/api/youtube/login").permitAll()
+                .requestMatchers("/api/youtube/oauth2callback").permitAll()
+                .requestMatchers(org.springframework.http.HttpMethod.POST, "/api/youtube/create-playlist").authenticated()
+            .anyRequest().authenticated()
         )
         .addFilterBefore(jwtFilter, UsernamePasswordAuthenticationFilter.class);
 
